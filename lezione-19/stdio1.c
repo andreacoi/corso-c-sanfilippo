@@ -36,7 +36,7 @@ void hexdump(void *p, size_t len) {
         // Questa funzione si chiama isprint
         // Per avere una funzione più compatta utilizziamo l'operatore ternario ?
         // Quindi verifica: se il byte[i] è stampabile c = byte[i], altrimenti c == '.'
-        int c = isprint(byte[i]) ? byte[i] : '.';
+        int c = isprint(byte[i]) ? byte[i] : '-';
         printf("%c", c);
       }
       printf("\n");
@@ -70,6 +70,9 @@ int main(void) {
     nread = read(fd, buf, sizeof(buf)); 
     // quando finiscono i byte a disposizione la lettura è terminata quindi break.
     if (nread == 0) break;
+    // hex dump accetta buf come argomento, il che significa che "il contenuto" del file
+    // identificato da fd (file descriptor) viene letto da read e inserito all'inizio del buffer.
+    // cfr. manpages - man read
     hexdump(buf, nread);
   }
 
