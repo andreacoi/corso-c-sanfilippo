@@ -1,0 +1,269 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <ctype.h>
+/*================================= Data structures =======================================*/
+// per scrivere un inteprete bisogna innanzitutto individuare i tipi primitivi:
+// int
+// str
+// bool
+// list
+#define TFOBJ_TYPE_INT 0
+#define TFOBJ_TYPE_STR 1
+#define TFOBJ_TYPE_BOOL 2
+#define TFOBJ_TYPE_LIST 3
+#define TFOBJ_TYPE_SYMBOL 4 // <-- tipo "a parte" perché riguarda i "simboli", che sono tutte quelle parole che non vanno nello stack ma sono FUNZIONI da eseguire.
+// dichiariamo una struct per gestire i tipi e gli operatori (symbols)
+/* facendo un parallelismo con i linguaggi OOP questo è la rappresentazione in C di un OGGETTO <-- CONCETTO CHIAVE */
+typedef struct tfobj {
+  // reference counting
+  int refcount;
+  // int per gestire il tipo, essendo int gestisce anche il booleano
+  int type; // <-- TFOBJ_TYPE_*
+  // qui all'interno della struct possiamo aggiungere anche la variabile line per farci dire dall'interprete a quale linea è avvenuto l'errore.
+  union {
+    // union per i come intero OPPURE str come stringa. La struct viene gestita come stringa utilizzando un puntatore a char e una lunghezza.
+    // il fatto di utilizzare una union è chiaro. ogni occorrenza può essere di UN SOLO TIPO (da qui l'utilizzo di una union anonima) per volta, quindi:
+    // - o è un intero;
+    // - o è una stringa (o un simbolo/funzione);
+    // - o è una lista
+    int i;
+    struct {
+      char *ptr;
+      size_t len;
+    } str;
+    // per gestire la lista occorre un puntatore in grado di immagazzinare una lista e quindi 
+    /* Nota: per gestire la lista avremmo potuto utilizzare una linked list che, a prima vista, potrebbe sembrare la soluzione ideale. 
+     * Infatti la linked list ha una complessità algoritmica O(1), ma ha una cattiva località della cache (credo che Salvatore intendesse "allocazione")
+     * e utilizza un bel po' di memoria perché ogni nodo ha un puntatore a next, nel caso di single linked list e due puntatori nel caso in cui si voglia utilizzare anche previous
+     * (per muoversi nella lista precedente).
+     */
+    struct {
+      struct tfobj **ele; // <-- questa lista è un array di puntatori a oggetti tfobj, definizione ricorsiva. Il mio array è un puntatore a dei puntatori di tipo tfobj.
+      size_t len;
+      // size_t alloc_len; // <-- parametro per SOVRAALLOCARE in maniera indipendente dalla dimensione di len. Ma lo faremo dopo.
+    } list;
+  };
+} tfobj;
+
+// dichiaro una struct per immagazzinare i dati da parsare (il programma prg) e il prossimo token* di cui effettuare il parse.
+// cfr. definizione ChatGPT --> 
+// Il lexer* (o tokenizer) lo suddivide in token come:
+/*
+  * es. x = 5 + 3;
+  * x → identificatore
+  * = → operatore di assegnazione
+  * 5 → numero
+  * + → operatore aritmetico
+  * 3 → numero
+  * ; → terminatore di istruzione
+*/
+typedef struct tfparser {
+  char *prg; // <-- il programma da compilare 
+  char *p; // <-- il prossimo token di cui effettuare il parse
+} tfparser;
+
+// dichiaro una struct tfctx, che mi è necessaria per avere il contesto all'interno del quale eseguire il mio programma, una volta compilato.
+typedef struct tfctx {
+  tfobj *stack;
+} tfctx;
+
+/*=============================== Allocation wrappers  =====================================*/
+
+// per scrivere una "variazione" di malloc, inizio con il copiarmi il prototipo dalla manpage
+// void *malloc(size_t size); <-- prototipo della malloc
+
+void *xmalloc(size_t size) {
+  void *ptr = malloc(size);
+  if (ptr == NULL) {
+    fprintf(stderr, "Out of memory, sto cercando di allocare %zu bytes.\n", size);
+    exit(1);
+  }
+  return ptr;
+}
+
+/*============= Funzioni relazionate agli oggetti (object related functions) ===============*/
+
+// alloca e inizializza l'oggetto ToyForth Object - generico, grazie a type è possibile creare tutti gli altri.
+tfobj *createObject(int type) {
+// qui dovremmo allocare l'oggetto e quittare in caso di out of memory, quindi ci prepariamo
+// una versione modificata di malloc, che chiamiamo xmalloc.
+  tfobj *o = xmalloc(sizeof(tfobj));
+  // indico il tipo di tfobj
+  o->type = type;
+  // setto refcount a 1 perché in fase di creazione dell'oggetto devo dare almeno 1 come valore alla referenza.
+  o->refcount = 1;
+  return o;
+}
+
+// alloca e inizializza un oggetto di tipo STRING
+tfobj *createStringObject(char *s, size_t len) {
+  tfobj *o = createObject(TFOBJ_TYPE_STR);
+  o->str.ptr = s;
+  o->str.len = len;
+  return o;
+}
+
+// alloca e inizializza un oggetto di tipo SYMBOL - funzioni e operatori
+tfobj *createSymbolObject(char *s, size_t len) {
+  tfobj *o = createStringObject(s, len);
+  o->type = TFOBJ_TYPE_SYMBOL;
+  return o;
+}
+
+// alloca e inizializza un oggetto di tipo INT
+tfobj *createIntObject(int i) {
+  tfobj *o = createObject(TFOBJ_TYPE_INT);
+  o->i = i;
+  return o;
+}
+
+// alloca e inizializza un oggetto di tipo BOOL - come un intero
+tfobj *createBoolObject(int i) {
+  tfobj *o = createObject(TFOBJ_TYPE_BOOL);
+  o->i = i;
+  return o;
+}
+
+/*==================================== List Object ========================================*/
+
+// alloca e inizializza un oggetto di tipo LIST
+tfobj *createListObject(void) {
+  tfobj *o = createObject(TFOBJ_TYPE_LIST);
+  o->list.ele = NULL; // <-- la lista al momento dell'inizializzazione deve essere vuota.
+  o->list.len = 0; // <-- per questo motivo len deve essere = 0.
+  return o;
+}
+// funzione per accodare gli elementi parsati alla lista tfobj
+// il refcount dell'oggetto va incrementato dal chiamante, se necessario.
+void listPush(tfobj *l, tfobj *ele) {
+  /* Panoramica su realloc 
+   * realloc prende una precedente allocazione *ptr e rialloca con una dimensione personalizzata.
+   * se il puntatore è null, realloc è comodissima perché funziona come se fosse una malloc.
+   */
+  l->list.ele = realloc(l->list.ele, sizeof(tfobj*) * (l->list.len + 1)); 
+  l->list.ele[l->list.len] = ele; // <-- l->list.ele[l->list.len] perché l->list.len rappresenta l'ultimo token.
+  l->list.len++; // incremento il numero di elementi della lista.
+}
+
+/*============================= Convert program in TFOBJ ==================================*/
+// funzione per "consumare gli spazi"
+void parseSpaces(tfparser *parser) {
+// per consumare gli spazi utilizzo la funzione isspace() per verificare che sia uno spazio.
+// la funzione ispace è contenuta in ctype.h
+// per fare questo utilizzo un ciclo while facendo scorrere parser->p
+while (isspace(parser->p[0])) parser->p++; // fino a quando il carattere su cui sono ORA p[0] è uno spazio, 
+}
+
+#define MAX_NUM_LEN 128
+// prepara prototipo della funzione per gestire gli interi
+// Importante! Questa funzione deve gestire anche i numeri con un numero di cifre maggiore di 1.
+// Per fare ciò devo creare un walker per "camminare fra i numeri".
+tfobj *parseNumber(tfparser *parser) {
+  char buf[MAX_NUM_LEN]; // <-- lunghezza max del mio numero
+  char *start = parser->p;
+  char *end;
+  // verifica che il numero inizi per -
+  if (parser->p[0] == '-') parser->p++;
+  while (parser->p[0] && isdigit(parser->p[0])) parser->p++;
+  end = parser->p;
+  // quando siamo arrivati all'ultimo carattere numero ciclando con while
+  // dobbiamo capire di quanti caratteri è composto il nostro numero (nella struct è numlen)
+  int numlen = end - start; // <-- visto che i puntatori sono sempre interi posso effettuare delle operazioni di sottrazione.
+  if (numlen >= MAX_NUM_LEN) return NULL;
+  memcpy(buf, start, numlen);
+  buf[numlen] = 0; // null terminator, all'ennesimo char inserisci il terminatore di riga.
+  tfobj *o = createIntObject(atoi(buf));
+  return o;
+}
+
+// creo la funzione compile
+tfobj *compile(char *prg) {
+  tfparser parser;
+  parser.prg = prg; // <-- prg, il campo di parser diventa uguale alla variabile locale
+  parser.p = prg; // <-- all'inizio della "compilazione" il programma parte sempre all'inizio dello stesso.
+  // inizializzo una lista di tipo ListObject in cui inserire i vari dati parsati.
+  tfobj *parsed = createListObject();
+  while (parser.p) { // <-- ciclo while valido fino a quando il compilatore non incontra il NULL terminator.
+    // inizializzo l'oggetto da "riempire" all'inizio del ciclo while.
+    tfobj *o;
+    // gestione della posizione del cursore per stampare i syntax error.
+    char *token_start = parser.p;
+    // prima di tutto si consumano gli spazi vuoti - per fare questo si utilizza una funzione.
+    parseSpaces(&parser); // <-- passa come argomento della funzione parserSkipSpaces il puntatore al parser con &parser.
+    // avendo "eliminato" gli spazi inizia a ciclare gli altri caratteri per gestirne i vari tipi
+    if (parser.p[0] == 0) break; // <-- NULL TERMINATOR. Il programma da compilare ha raggiunto la fine.
+    if (isdigit(parser.p[0]) || parser.p[0] == '-') {
+      // devo avere una variabile di tipo tfobj per immagazzinare gli int
+      o = parseNumber(&parser);
+    } else {
+      o = NULL;
+    }
+    
+    // controlla se il parser verifica l'esistenza di un errore di parsing.
+    if (o == NULL) {
+      // FIX ME: parser.p potrebbe puntare un indirizzo di memoria tale da trovarsi in mezzo ad un numero: 
+      //printf("Syntax error near %10s.\n", parser.p);
+      printf("Syntax error near %10s.\n", token_start);
+      /* N.B. L'errore di sintassi così scritto potrebbe portare a comportamenti imprevisti.
+       * parser.p, infatti, come cursore potrebbe capitare in mezzo ad un numero.
+       */
+    } else {
+      // immagazzino i "risultati" del parsing in una lista.
+      listPush(parsed, o); // <-- parsed è la lista, o è l'oggetto da inserire.
+    }
+  } 
+  return parsed;
+}
+/*================================ Execute the program ====================================*/
+void exec(tfobj *prg) {
+  printf("[");
+  for (size_t j = 0; j < prg->list.len; j++) {
+    tfobj *o = prg->list.ele[j];
+    switch (o->type) {
+      case TFOBJ_TYPE_INT:
+        printf("%d", o->i);
+        break;
+      default:
+        printf("?");
+    }
+    printf(" ");
+  }
+  printf("]\n");
+}
+/*======================================= Main ============================================*/
+
+// dovremmo leggere un programma passato come stringa tramite argomento argc, ma facciamo il programma più semplice possibile.
+int main(int argc, char **argv) {
+  // controlliamo che il numero di argomenti sia adeguato, se non lo fosse restituiamo errore
+  if (argc != 2) {
+    fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
+    return 1;
+  }
+
+  // per iniziare a compilare dobbiamo prima aprire il file che ci serve e lo facciamo via fopen
+  // ovviamente apriamo il file "contenuto" in argv in sola lettura.
+  FILE *fp = fopen(argv[1], "r");
+  if (fp == NULL) {
+    perror("Opening Toyforth program\n");
+    return 1;
+  }
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    // torno all'inizio dello stream per leggere tutto il contenuto del file
+    fseek(fp, 0, SEEK_SET);
+    // creo un puntatore a char per contenere lo stream del programma (il testo)
+    // vecchio codice: 
+    // char *prgtext; // attenzione: errore, avevo dimenticato di allocare utilizzando la nostra funzione xmalloc (wrapper di malloc)
+    // QUESTO CREA UNA SEGMENTATION FAULT! RICORDA SEMPRE DI ALLOCARE MEMORIA QUANDO VUOI SCRIVERE IN UN DETERMINATO INDIRIZZO DI MEMORIA!
+    char *prgtext = xmalloc(file_size + 1); // alloco anche lo spazio per il bit relativo al NULL TERM.
+    fread(prgtext, file_size, 1, fp);
+    prgtext[file_size] = 0; // <-- null term
+    tfobj *prg = compile(prgtext);
+    exec(prg);
+    fclose(fp);
+
+  // n.b. per eseguire il programma ho bisogno di un contesto di esecuzione del programma.
+  return 0;
+}
