@@ -100,8 +100,13 @@ tfobj *createObject(int type) {
 // alloca e inizializza un oggetto di tipo STRING
 tfobj *createStringObject(char *s, size_t len) {
   tfobj *o = createObject(TFOBJ_TYPE_STR);
-  o->str.ptr = s;
+  // qui non gestisco l'allocazione.
+  // fix:
+  o->str.ptr = xmalloc(len + 1);
   o->str.len = len;
+  memcpy(o->str.ptr, s, len);
+  // dopo aver chiamato la memcpy, inserisco il NULL TERM alla posizione LEN.
+  o->str.ptr[len] = 0;
   return o;
 }
 
@@ -178,7 +183,32 @@ tfobj *parseNumber(tfparser *parser) {
   return o;
 }
 
+// creiamo una funzione di helper che ritorna true se il carattere incontrato è uno tra: char symchars[] = "+-*/%"; 
+// come modello possiamo utilizzare una delle funzioni presenti in ctype.h, quindi la funzione ritorna int (0 oppure 1)
+// e accetta come unico argomento un char c.
+int is_symbol_char(char c) {
+  char symchars[] = "+-*/%";
+  if (isalpha(c)) {
+    return 1;
+    // strchr ritorna un puntatore a char se c è presente in symchars e ritorna un puntatore alla posizione del carattere c all'interno di symchars.
+    // Se c non esiste all'interno di symchars, ritorna NULL.
+  } else if(strchr(symchars,c) != NULL) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+// funzione per eseguire il parsing dei simboli - per simbolo si intende: PRINT, DUP, +, -, *
+tfobj *parseSymbol(tfparser *parser) {
+  char *start = parser->p; // primo record, EQUIVALENTE A parser->p[0] TODO: TEST.
+  while (parser->p[0] && is_symbol_char(parser->p[0])) parser->p++; 
+  int len = parser->p - start;
+  return createSymbolObject(start, len);
+}
+
 // creo la funzione compile
+// la funzione compile inserisce gli argomenti "parsati" all'interno di una ListObject (è sempre una tfobj *).
 tfobj *compile(char *prg) {
   tfparser parser;
   parser.prg = prg; // <-- prg, il campo di parser diventa uguale alla variabile locale
@@ -194,9 +224,13 @@ tfobj *compile(char *prg) {
     parseSpaces(&parser); // <-- passa come argomento della funzione parserSkipSpaces il puntatore al parser con &parser.
     // avendo "eliminato" gli spazi inizia a ciclare gli altri caratteri per gestirne i vari tipi
     if (parser.p[0] == 0) break; // <-- NULL TERMINATOR. Il programma da compilare ha raggiunto la fine.
-    if (isdigit(parser.p[0]) || parser.p[0] == '-') {
+    // in questa versione precedente c'è un errore, infatti dobbiamo controllare che IMMEDIATAMENTE dopo il - ci sia un numero, altrimenti è un SYMBOL.
+    // if (isdigit(parser.p[0]) || parser.p[0] == '-') {
+    if (isdigit(parser.p[0]) || (parser.p[0] == '-' && isdigit(parser.p[1]))) {
       // devo avere una variabile di tipo tfobj per immagazzinare gli int
       o = parseNumber(&parser);
+    } else if (is_symbol_char(parser.p[0])) {
+      o = parseSymbol(&parser);
     } else {
       o = NULL;
     }
@@ -217,21 +251,39 @@ tfobj *compile(char *prg) {
   return parsed;
 }
 /*================================ Execute the program ====================================*/
-void exec(tfobj *prg) {
-  printf("[");
-  for (size_t j = 0; j < prg->list.len; j++) {
-    tfobj *o = prg->list.ele[j];
-    switch (o->type) {
-      case TFOBJ_TYPE_INT:
-        printf("%d", o->i);
-        break;
-      default:
-        printf("?");
-    }
-    printf(" ");
+/*
+ * Nota sulla riscrittura della funzione exec -> print_object
+ * La riscrittura coinvolge uno switch all'inizio della funzione per interpretare i casi:
+ * Caso TFOBJ_TYPE_INT: stampa l'intero e fa break;
+ * Caso TFOBJ_TYPE_LIST: (attenzione!) fa una chiamata ricorsiva alla funzione print_object
+ * passando come elemento ele, e fa ripartire la scelta dei casi, stampando di fatto la lista di numeri com'era prima.
+ * Postilla sulla exec: il nome è stato cambiato perché non si trattava di una vera e propria esecuzione.
+ * TODO: scrivere la funzione exec.
+ *
+*/
+void print_object(tfobj *o) {
+  switch(o->type) {
+    case TFOBJ_TYPE_INT:
+      printf("%d ", o->i);
+      break;
+    case TFOBJ_TYPE_LIST:
+      printf("[");
+      for (size_t j = 0; j < o->list.len; j++) {
+        tfobj *ele = o->list.ele[j];
+        // chiamata ricorsiva alla funzione
+        print_object(ele);
+      }
+      printf("]");
+      break;
+    case TFOBJ_TYPE_SYMBOL:
+      printf("%s ", o->str.ptr);
+      break;
+    default:
+      printf("?");
+      break;
   }
-  printf("]\n");
 }
+
 /*======================================= Main ============================================*/
 
 // dovremmo leggere un programma passato come stringa tramite argomento argc, ma facciamo il programma più semplice possibile.
@@ -261,7 +313,8 @@ int main(int argc, char **argv) {
     fread(prgtext, file_size, 1, fp);
     prgtext[file_size] = 0; // <-- null term
     tfobj *prg = compile(prgtext);
-    exec(prg);
+    print_object(prg);
+    printf("\n");
     fclose(fp);
 
   // n.b. per eseguire il programma ho bisogno di un contesto di esecuzione del programma.
