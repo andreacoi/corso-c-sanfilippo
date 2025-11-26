@@ -295,9 +295,23 @@ void print_object(tfobj *o) {
       break;
   }
 }
+/*========================= Execution and context ============================*/
 
-void exec(tfobj *prg) {
+tfctx *create_context(void) {
+  //TODO: completare la funzione per creare il contesto. minuto 11.30
+}
+
+// la funzione accetta come argomenti:
+// - un programma, ovviamente (prg, che non è altro che una lista salvata nello stack;
+// - un contesto di esecuzione (tfctx).
+void exec(tfobj *prg, tfctx *ctx) {
   // utilizzo la funzione assert per essere sicuro che il programma sia di tipo LIST.
+  assert(prg->type == TFOBJ_TYPE_LIST); 
+  // funzione per ciclare all'interno della lista tfobj e recuperare le word.
+  // una word è un componente sintattico del programma.
+  for (size_t j = 0; j < prg->list.len; j++) {
+    tfobj *word = prg->list.ele[j];
+  }
 }
 
 /*======================================= Main ============================================*/
