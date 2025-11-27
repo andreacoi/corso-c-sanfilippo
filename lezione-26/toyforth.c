@@ -263,7 +263,7 @@ tfobj *compile(char *prg) {
 }
 /*================================ Execute the program ====================================*/
 /*
- * Nota sulla riscrittura della funzione exec -> print_object
+ * Nota sulla riscrittura della funzione exec -> printObject
  * La riscrittura coinvolge uno switch all'inizio della funzione per interpretare i casi:
  * Caso TFOBJ_TYPE_INT: stampa l'intero e fa break;
  * Caso TFOBJ_TYPE_LIST: (attenzione!) fa una chiamata ricorsiva alla funzione print_object
@@ -272,7 +272,7 @@ tfobj *compile(char *prg) {
  * TODO: scrivere la funzione exec.
  *
 */
-void print_object(tfobj *o) {
+void printObject(tfobj *o) {
   switch(o->type) {
     case TFOBJ_TYPE_INT:
       printf("%d", o->i);
@@ -282,7 +282,7 @@ void print_object(tfobj *o) {
       for (size_t j = 0; j < o->list.len; j++) {
         tfobj *ele = o->list.ele[j];
         // chiamata ricorsiva alla funzione
-        print_object(ele);
+        printObject(ele);
         if (j != o->list.len - 1) printf(" ");
       }
       printf("]");
@@ -297,20 +297,44 @@ void print_object(tfobj *o) {
 }
 /*========================= Execution and context ============================*/
 
-tfctx *create_context(void) {
-  //TODO: completare la funzione per creare il contesto. minuto 11.30
+/*
+ * Il compilatore traduce il codice sorgente (il "progetto") in istruzioni macchina (l'eseguibile).
+ * Non può eseguirle "direttamente" perché ha bisogno di un **Contesto di Esecuzione (Runtime)**.
+ * Il Runtime fornisce i servizi dinamici essenziali (memoria, I/O, interazione con il SO)
+ * che permettono al programma di interagire con il mondo esterno.
+ */
+
+// funzione per creare il contesto di esecuzione 
+tfctx *createContext(void) {
+  // allochiamo della memoria per creare il contesto
+  tfctx *ctx = xmalloc(sizeof(*ctx)); // <-- *ctx deferenzia, quindi il sizeof
+                                      //fa riferimento alla dimensione della struct!
+  // posso scrivere questa xmalloc anche come xmalloc(sizeof(tfobj)), però
+  // così è più comodo: *ctx, significa, significa in questo caso:
+  // dammi la dimensione (sizeof) della COSA a cui punta ctx, che è un oggetto di
+  // tipo tfctx. tfctx è una struct, quindi alloca il sizeof di una struct tfctx.
+  
+  // inizializza lo stack, creando come stack un oggetto di tipo lista.
+  ctx->stack = createListObject();
+  return ctx;
 }
 
 // la funzione accetta come argomenti:
 // - un programma, ovviamente (prg, che non è altro che una lista salvata nello stack;
 // - un contesto di esecuzione (tfctx).
-void exec(tfobj *prg, tfctx *ctx) {
+void exec(tfctx *ctx, tfobj *prg) {
   // utilizzo la funzione assert per essere sicuro che il programma sia di tipo LIST.
   assert(prg->type == TFOBJ_TYPE_LIST); 
   // funzione per ciclare all'interno della lista tfobj e recuperare le word.
   // una word è un componente sintattico del programma.
   for (size_t j = 0; j < prg->list.len; j++) {
     tfobj *word = prg->list.ele[j];
+    switch (word->type) {
+      case TFOBJ_TYPE_SYMBOL:
+        break;
+      default:
+        listPush(ctx->stack, word);
+    }
   }
 }
 
@@ -343,7 +367,16 @@ int main(int argc, char **argv) {
     fread(prgtext, file_size, 1, fp);
     prgtext[file_size] = 0; // <-- null term
     tfobj *prg = compile(prgtext);
-    print_object(prg);
+   
+    printObject(prg);
+    printf("\n");
+    
+    // creo il contesto di esecuzione del programma
+    tfctx *ctx = createContext();
+    // eseguo il programma passando gli argomenti ctx e prg.
+    exec(ctx, prg);
+    printf("Stack content:");
+    printObject(ctx->stack);
     printf("\n");
     fclose(fp);
 
