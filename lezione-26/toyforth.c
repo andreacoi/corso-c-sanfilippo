@@ -165,7 +165,6 @@ tfobj *createBoolObject(int i) {
   return o;
 }
 
-
 /*
  * Nota sulla riscrittura della funzione exec -> printObject
  * La riscrittura coinvolge uno switch all'inizio della funzione per interpretare i casi:
@@ -238,7 +237,6 @@ void release(tfobj *o) {
   o->refcount--;
   if (o->refcount == 0) freeObject(o);
 }
-// RIPRENDI DAL MINUTO 30:45
 
 /*==================================== List Object ========================================*/
 
