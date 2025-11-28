@@ -65,9 +65,32 @@ typedef struct tfparser {
   char *p; // <-- il prossimo token di cui effettuare il parse
 } tfparser;
 
+/* Tabella delle funzioni - ciascuno di questi record
+ * rappresenta un nome simbolo associato con una implementazione di funzione.
+ * */
+struct FunctionTableEntry {
+  // il nome della funzione
+  tfobj *name;
+  // l'esecuzione della funzione stessa
+  void (*callback)(tfctx *ctx, tfobj *name);
+  // inserisco anche un terzo campo della struct utile per gestire delle funzioni
+  // definite dall'utente. Se il campo è null, le funzioni saranno quelle di default del linguaggio.
+  tfobj *user_list;
+};
+
+/* struct per memorizzare la lista delle funzioni "valide", conteggiandole. */
+struct FunctionTable {
+  // doppio puntatore perché è come se fosse un array di array
+  // questo mi consente di allocare nell'heap la lista di funzioni comprensiva del numero delle funzioni stesse.
+  struct FunctionTableEntry **func_table;
+  size_t func_count;
+}
+
 // dichiaro una struct tfctx, che mi è necessaria per avere il contesto all'interno del quale eseguire il mio programma, una volta compilato.
 typedef struct tfctx {
   tfobj *stack;
+  // oltre allo stack, nel contesto ho bisogno di avere una lista di funzioni da eseguire.
+  struct FunctionTable functable;
 } tfctx;
 
 /*=============================== Allocation wrappers  =====================================*/
@@ -140,6 +163,45 @@ tfobj *createBoolObject(int i) {
   tfobj *o = createObject(TFOBJ_TYPE_BOOL);
   o->i = i;
   return o;
+}
+
+
+/*
+ * Nota sulla riscrittura della funzione exec -> printObject
+ * La riscrittura coinvolge uno switch all'inizio della funzione per interpretare i casi:
+ * Caso TFOBJ_TYPE_INT: stampa l'intero e fa break;
+ * Caso TFOBJ_TYPE_LIST: (attenzione!) fa una chiamata ricorsiva alla funzione print_object
+ * passando come elemento ele, e fa ripartire la scelta dei casi, stampando di fatto la lista di numeri com'era prima.
+ * Postilla sulla exec: il nome è stato cambiato perché non si trattava di una vera e propria esecuzione.
+ * TODO: scrivere la funzione exec.
+ *
+*/
+void printObject(tfobj *o) {
+  switch(o->type) {
+    case TFOBJ_TYPE_INT:
+      printf("%d", o->i);
+      break;
+    case TFOBJ_TYPE_LIST:
+      printf("[");
+      for (size_t j = 0; j < o->list.len; j++) {
+        tfobj *ele = o->list.ele[j];
+        // chiamata ricorsiva alla funzione
+        printObject(ele);
+        if (j != o->list.len - 1) printf(" ");
+      }
+      printf("]");
+      break;
+    case TFOBJ_TYPE_STR:
+      // è la stessa cosa dello stampare un simbolo, ma lo metto dentro le virgolette.
+      printf("\"%s\"", o->str.ptr);
+      break;
+    case TFOBJ_TYPE_SYMBOL:
+      printf("%s", o->str.ptr);
+      break;
+    default:
+      printf("?");
+      break;
+  }
 }
 
 // funzione per gestire la pulizia delle allocazioni degli oggetti.
@@ -284,6 +346,7 @@ tfobj *compile(char *prg) {
     
     // controlla se il parser verifica l'esistenza di un errore di parsing.
     if (o == NULL) {
+      release(parsed);
       // FIX ME: parser.p potrebbe puntare un indirizzo di memoria tale da trovarsi in mezzo ad un numero: 
       //printf("Syntax error near %10s.\n", parser.p);
       printf("Syntax error near %10s.\n", token_start);
@@ -297,40 +360,7 @@ tfobj *compile(char *prg) {
   } 
   return parsed;
 }
-/*================================ Execute the program ====================================*/
-/*
- * Nota sulla riscrittura della funzione exec -> printObject
- * La riscrittura coinvolge uno switch all'inizio della funzione per interpretare i casi:
- * Caso TFOBJ_TYPE_INT: stampa l'intero e fa break;
- * Caso TFOBJ_TYPE_LIST: (attenzione!) fa una chiamata ricorsiva alla funzione print_object
- * passando come elemento ele, e fa ripartire la scelta dei casi, stampando di fatto la lista di numeri com'era prima.
- * Postilla sulla exec: il nome è stato cambiato perché non si trattava di una vera e propria esecuzione.
- * TODO: scrivere la funzione exec.
- *
-*/
-void printObject(tfobj *o) {
-  switch(o->type) {
-    case TFOBJ_TYPE_INT:
-      printf("%d", o->i);
-      break;
-    case TFOBJ_TYPE_LIST:
-      printf("[");
-      for (size_t j = 0; j < o->list.len; j++) {
-        tfobj *ele = o->list.ele[j];
-        // chiamata ricorsiva alla funzione
-        printObject(ele);
-        if (j != o->list.len - 1) printf(" ");
-      }
-      printf("]");
-      break;
-    case TFOBJ_TYPE_SYMBOL:
-      printf("%s", o->str.ptr);
-      break;
-    default:
-      printf("?");
-      break;
-  }
-}
+
 /*========================= Execution and context ============================*/
 
 /*
@@ -352,21 +382,12 @@ tfctx *createContext(void) {
   
   // inizializza lo stack, creando come stack un oggetto di tipo lista.
   ctx->stack = createListObject();
+  // inizializza il numero di funzioni a 0.
+  ctx->functable.func_table = NULL;
+  ctx->functable.func_count = 0;
+  registerFunction(ctx,"+", basicMathFunctions);
   return ctx;
 }
-
-/* Tabella delle funzioni - ciascuno di questi record
- * rappresenta un nome simbolo associato con una implementazione di funzione.
- * */
-struct FunctionTableEntry {
-  // il nome della funzione
-  tfobj *name;
-  // l'esecuzione della funzione stessa
-  void (*callback)(tfctx *ctx, tfobj *name);
-  // inserisco anche un terzo campo della struct utile per gestire delle funzioni
-  // definite dall'utente. Se il campo è null, le funzioni saranno quelle di default del linguaggio.
-  tfobj *user_list;
-};
 
 // funzione per eseguire i simboli
 // ritorna true (0) se il sistema trova il simbolo abbinato ad una qualche funzione.
@@ -392,6 +413,7 @@ void exec(tfctx *ctx, tfobj *prg) {
         break;
       default:
         listPush(ctx->stack, word);
+        retain(word);
     }
   }
 }
