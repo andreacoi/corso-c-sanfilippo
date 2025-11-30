@@ -68,21 +68,22 @@ typedef struct tfparser {
 /* Tabella delle funzioni - ciascuno di questi record
  * rappresenta un nome simbolo associato con una implementazione di funzione.
  * */
-struct FunctionTableEntry {
+struct tfctx;
+typedef struct FunctionTableEntry {
   // il nome della funzione
   tfobj *name;
   // l'esecuzione della funzione stessa
-  void (*callback)(tfctx *ctx, tfobj *name);
+  void (*callback)(struct tfctx *ctx, tfobj *name);
   // inserisco anche un terzo campo della struct utile per gestire delle funzioni
   // definite dall'utente. Se il campo è null, le funzioni saranno quelle di default del linguaggio.
   tfobj *user_list;
-};
+} tffuncentry;
 
 /* struct per memorizzare la lista delle funzioni "valide", conteggiandole. */
 struct FunctionTable {
   // doppio puntatore perché è come se fosse un array di array
   // questo mi consente di allocare nell'heap la lista di funzioni comprensiva del numero delle funzioni stesse.
-  struct FunctionTableEntry **func_table;
+  tffuncentry **func_table;
   size_t func_count;
 };
 
@@ -388,17 +389,19 @@ tfctx *createContext(void) {
   // inizializza il numero di funzioni a 0.
   ctx->functable.func_table = NULL;
   ctx->functable.func_count = 0;
-  registerFunction(ctx,"+", basicMathFunctions);
+  // registerFunction(ctx,"+", basicMathFunctions);
   return ctx;
 }
 
 // funzione per eseguire i simboli
 // ritorna true (0) se il sistema trova il simbolo abbinato ad una qualche funzione.
 // altrimenti ritorna 1.
+// 
+/* TODO: completare funzione callSymbol 
 int callSymbol(tfctx *ctx, tfobj *word) {
   return 0;
 }
-
+*/
 // la funzione accetta come argomenti:
 // - un programma, ovviamente (prg, che non è altro che una lista salvata nello stack;
 // - un contesto di esecuzione (tfctx).
@@ -412,7 +415,7 @@ void exec(tfctx *ctx, tfobj *prg) {
     switch (word->type) {
       case TFOBJ_TYPE_SYMBOL:
         // nel caso in cui ci sia un simbolo devo avere una funzione in grado di chiamarlo
-        callSymbol(ctx, word);
+        // da chiamare solo quando sarà completa --> callSymbol(ctx, word);
         break;
       default:
         listPush(ctx->stack, word);
