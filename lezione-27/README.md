@@ -1,7 +1,9 @@
-# Lezione 24 - scriviamo l'interprete Toyforth - parte dalla lezione 23 e continua
+# Lezione 27 - scriviamo l'interprete Toyforth - parte dalla lezione 23 e continua
 Video di riferimento pt.1: https://www.youtube.com/watch?v=vYODKK8TQGE
 Video di riferimento pt.2: https://www.youtube.com/watch?v=-QxrmHo-V7Y 
 Video di riferimento pt.3: https://www.youtube.com/watch?v=-1ZhCgaIPOk
+Video di riferimento pt.4: https://www.youtube.com/watch?v=oMj3N6jYIUU
+Video di riferimento pt.5: https://www.youtube.com/watch?v=C4AHEK3fSjg
 
 Toyforth è un interprete "giocattolo", scritto in C, per il linguaggio FORTH. Il linguaggio FORTH è un linguaggio di programmazione basato sullo stack.
 
