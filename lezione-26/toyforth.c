@@ -84,7 +84,7 @@ struct FunctionTable {
   // questo mi consente di allocare nell'heap la lista di funzioni comprensiva del numero delle funzioni stesse.
   struct FunctionTableEntry **func_table;
   size_t func_count;
-}
+};
 
 // dichiaro una struct tfctx, che mi è necessaria per avere il contesto all'interno del quale eseguire il mio programma, una volta compilato.
 typedef struct tfctx {
@@ -92,6 +92,11 @@ typedef struct tfctx {
   // oltre allo stack, nel contesto ho bisogno di avere una lista di funzioni da eseguire.
   struct FunctionTable functable;
 } tfctx;
+
+/*=============================== Function prototypes ======================================*/
+
+void retain(tfobj *o);
+void release(tfobj *o);
 
 /*=============================== Allocation wrappers  =====================================*/
 
