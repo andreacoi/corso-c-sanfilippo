@@ -263,6 +263,7 @@ int compareStringObject(tfobj *a, tfobj *b) {
    * se b è più lungo di a, le stringhe sono diverse, ritorno -1, se a e b hanno la stessa
    * lunghezza sono necessariamente identiche, ritorno 0.
    * Faccio quindi un doppio confronto, prima sulla parte comune e poi sulla lunghezza.
+   * Riprendi dal minuto 18.14.
    * */
   return 1;
 } 
