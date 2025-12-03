@@ -137,25 +137,6 @@ tfobj *createObject(int type) {
   return o;
 }
 
-// alloca e inizializza un oggetto di tipo STRING
-tfobj *createStringObject(char *s, size_t len) {
-  tfobj *o = createObject(TFOBJ_TYPE_STR);
-  // qui non gestisco l'allocazione.
-  // fix:
-  o->str.ptr = xmalloc(len + 1);
-  o->str.len = len;
-  memcpy(o->str.ptr, s, len);
-  // dopo aver chiamato la memcpy, inserisco il NULL TERM alla posizione LEN.
-  o->str.ptr[len] = 0;
-  return o;
-}
-
-// alloca e inizializza un oggetto di tipo SYMBOL - funzioni e operatori
-tfobj *createSymbolObject(char *s, size_t len) {
-  tfobj *o = createStringObject(s, len);
-  o->type = TFOBJ_TYPE_SYMBOL;
-  return o;
-}
 
 // alloca e inizializza un oggetto di tipo INT
 tfobj *createIntObject(int i) {
@@ -244,7 +225,49 @@ void release(tfobj *o) {
   if (o->refcount == 0) freeObject(o);
 }
 
-/*==================================== List Object ========================================*/
+/*============================== String Object ===============================*/
+
+// alloca e inizializza un oggetto di tipo STRING
+tfobj *createStringObject(char *s, size_t len) {
+  tfobj *o = createObject(TFOBJ_TYPE_STR);
+  // qui non gestisco l'allocazione.
+  // fix:
+  o->str.ptr = xmalloc(len + 1);
+  o->str.len = len;
+  memcpy(o->str.ptr, s, len);
+  // dopo aver chiamato la memcpy, inserisco il NULL TERM alla posizione LEN.
+  o->str.ptr[len] = 0;
+  return o;
+}
+
+// alloca e inizializza un oggetto di tipo SYMBOL - funzioni e operatori
+tfobj *createSymbolObject(char *s, size_t len) {
+  tfobj *o = createStringObject(s, len);
+  o->type = TFOBJ_TYPE_SYMBOL;
+  return o;
+}
+
+// funzione per comparare delle stringhe, utilizzando memcpm(), ritorna 0 se
+// le stringhe sono uguali, 1 se a>b, -1 se a<b.
+int compareStringObject(tfobj *a, tfobj *b) {
+  // stabilisco la lunghezza minima della stringa, risultante tra la
+  // lunghezza minore tra le due lunghezze stringa (a e b)
+  size_t minlen = a->str.len < b.str.len ? a->str.len : b->str.len; // <- operatore ternario
+  // attenzione, qui all'utilizzo di memcmp.
+  int cmp = memcmp(a->str.len, b->str.len, minlen);
+  /* memcmp confronta stringhe della stessa dimensione:
+   * questo significa che andiamo a confrontare il numero di caratteri "COMUNE"
+   * tra a e b. 
+   * Quindi poi a questo punto, una volta appurata l'uguaglianza tra le due parti parziali
+   * verifichiamo la lunghezza. Se a è più "lungo" di b, le stringhe sono diverse, ritorno 1,
+   * se b è più lungo di a, le stringhe sono diverse, ritorno -1, se a e b hanno la stessa
+   * lunghezza sono necessariamente identiche, ritorno 0.
+   * Faccio quindi un doppio confronto, prima sulla parte comune e poi sulla lunghezza.
+   * */
+  return 1;
+} 
+
+/*=============================== List Object ================================*/
 
 // alloca e inizializza un oggetto di tipo LIST
 tfobj *createListObject(void) {
