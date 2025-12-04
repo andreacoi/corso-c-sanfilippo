@@ -263,8 +263,15 @@ int compareStringObject(tfobj *a, tfobj *b) {
    * se b è più lungo di a, le stringhe sono diverse, ritorno -1, se a e b hanno la stessa
    * lunghezza sono necessariamente identiche, ritorno 0.
    * Faccio quindi un doppio confronto, prima sulla parte comune e poi sulla lunghezza.
-   * Riprendi dal minuto 18.14.
    * */
+  if (cmp == 0) {
+    if (a->str.len == b->str.len) return 0; // <- le stringhe sono uguali
+    else if (a->str.len > b->str.len return 1; // la lunghezza di a è maggiore di b
+    else return -1;
+  } else {
+    if (cmp < 0) return 1;
+    else return -1;
+  }
   return 1;
 } 
 
@@ -397,6 +404,22 @@ tfobj *compile(char *prg) {
  * Il Runtime fornisce i servizi dinamici essenziali (memoria, I/O, interazione con il SO)
  * che permettono al programma di interagire con il mondo esterno.
  */
+
+// funzione per trovare la funzione passata nell'argomento name all'interno del
+// contesto ctx. name è un oggetto di tipo tfobj.
+// se la funzione non viene trovata ritorna NULL.
+tffuncentry *getFunctionByName(tfctx *ctx, tfobj *name) {
+  for (size_t j = 0; j < ctx->functable.func_count; j++) {
+     // vado a prendere il primo elemento della lista
+     tffuncentry *fe = ctx->functable.func_table[j];
+     // faccio una comparazione di stringhe tfobj per ritornare fe
+     if (compareStringObject(fe->name, name) == 0) return fe;
+  }
+  // se non trovo la funzione ritorna NULL
+  return NULL;
+}
+
+// riprendi dal minuto: 22.17 - registerCFunction
 
 // funzione per creare il contesto di esecuzione 
 tfctx *createContext(void) {
