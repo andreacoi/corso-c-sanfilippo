@@ -396,6 +396,28 @@ tfobj *compile(char *prg) {
   return parsed;
 }
 
+/*========================= Basic standard library ===========================*/
+// funzione per gestire le operazioni matematiche basilari
+void basicMathFunctions(tfctx *ctx, tfobj *name) {
+// prima di andare a prendere i valori su cui eseguire le operazioni
+// verifico che ci siano sufficienti elementi nello stack
+if (checkStackMinLen(ctx, 2)) return;
+// arrivato qui la condizione è verificata per cui prelevo l'ULTIMO ELEMENTO (b)
+// accertandomi che sia un oggetto tfobj di tipo INT
+tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+// avendo prelevato b, proseguo prelevando a
+tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+// se uno dei due elementi è null, ritorna 1
+if (a == NULL || b == NULL) return;
+// se altrimenti gli elementi sono validi, li sommo come due int normali,
+// li converto in tfobj e ne carico la somma ottenuta nello stack
+int result = a->i + b->i;
+ctxStackPush(ctx, createIntObject(result);
+// dopo la lezione 27, Salvatore ha spiegato le funzioni variadiche,
+// quando riprenderemo con ToyForth questa funzione dovrà essere completata.
+// TODO: SCRIVERE LE FUNZIONI checkStackMinLen, checkStackPop...
+// TODO: UTILIZZARE UNO SWITCH per implementare le varie operazioni matematiche
+}
 /*========================= Execution and context ============================*/
 
 /*
