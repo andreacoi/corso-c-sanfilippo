@@ -76,7 +76,7 @@ typedef struct FunctionTableEntry {
   void (*callback)(struct tfctx *ctx, tfobj *name);
   // inserisco anche un terzo campo della struct utile per gestire delle funzioni
   // definite dall'utente. Se il campo è null, le funzioni saranno quelle di default del linguaggio.
-  tfobj *user_list;
+  tfobj *user_func;
 } tffuncentry;
 
 /* struct per memorizzare la lista delle funzioni "valide", conteggiandole. */
@@ -252,9 +252,9 @@ tfobj *createSymbolObject(char *s, size_t len) {
 int compareStringObject(tfobj *a, tfobj *b) {
   // stabilisco la lunghezza minima della stringa, risultante tra la
   // lunghezza minore tra le due lunghezze stringa (a e b)
-  size_t minlen = a->str.len < b.str.len ? a->str.len : b->str.len; // <- operatore ternario
+  size_t minlen = a->str.len < b->str.len ? a->str.len : b->str.len; // <- operatore ternario
   // attenzione, qui all'utilizzo di memcmp.
-  int cmp = memcmp(a->str.len, b->str.len, minlen);
+  int cmp = memcmp(a->str.ptr, b->str.ptr, minlen);
   /* memcmp confronta stringhe della stessa dimensione:
    * questo significa che andiamo a confrontare il numero di caratteri "COMUNE"
    * tra a e b. 
@@ -266,7 +266,7 @@ int compareStringObject(tfobj *a, tfobj *b) {
    * */
   if (cmp == 0) {
     if (a->str.len == b->str.len) return 0; // <- le stringhe sono uguali
-    else if (a->str.len > b->str.len return 1; // la lunghezza di a è maggiore di b
+    else if (a->str.len > b->str.len) return 1; // la lunghezza di a è maggiore di b
     else return -1;
   } else {
     if (cmp < 0) return 1;
@@ -419,7 +419,45 @@ tffuncentry *getFunctionByName(tfctx *ctx, tfobj *name) {
   return NULL;
 }
 
-// riprendi dal minuto: 22.17 - registerCFunction
+tffuncentry *registerFunction(tfctx *ctx, tfobj *name) {
+  // alloca un array di puntatori tffuncentry
+  ctx->functable.func_table = xrealloc(ctx->functable.func_table, 
+                                      sizeof(tffuncentry*) * (ctx->functable.func_count + 1));
+  // alloco un pezzo di memoria per la singola funzione
+  tffuncentry *fe = xmalloc(sizeof(tffuncentry));
+  // inserisco fe alla posizione func_count (che sarà l'ultima, la iesima)
+  ctx->functable.func_table[ctx->functable.func_count] = fe;
+  // incremento il conto delle funzioni presenti nella tabella funzioni
+  ctx->functable.func_count++;
+  fe->name = name;
+  // incremento il refcount perché utilizzo name e lo libero nella funzione registerCFunction
+  retain(name);
+  fe->callback = NULL;
+  fe->user_func = NULL;
+  return fe;
+}
+
+// funzione per registrare le funzioni che hanno un corrispettivo in C
+void registerCFunction(tfctx *ctx, char *name, void (*callback) (tfctx *ctx, tfobj *name)) {
+  // inizializzo la function entry
+  tffuncentry *fe;
+  // converto il nome della funzione in oggetto di tipo stringa (tfobj)
+  tfobj *oname = createStringObject(name, strlen(name));
+  fe = getFunctionByName(ctx, oname);
+  // se si tratta di una funzione definita dall'utente libero la memoria
+  if (fe) {
+    if (fe->user_func) {
+      release(fe->user_func);
+      fe->user_func = NULL;
+    }
+  // rimpiazziamo la funzione callback di fe con la callback passata come argomento
+  fe->callback = callback;
+  } else {
+    // invoco la funzione registerFunction che setta a NULL la callback e la user_func
+    fe = registerFunction(ctx, oname);
+  }
+  release(oname);
+}
 
 // funzione per creare il contesto di esecuzione 
 tfctx *createContext(void) {
