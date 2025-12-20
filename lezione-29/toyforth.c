@@ -76,7 +76,7 @@ typedef struct FunctionTableEntry {
   // il nome della funzione
   tfobj *name;
   // l'esecuzione della funzione stessa
-  void (*callback)(struct tfctx *ctx, char *name);
+  int (*callback)(struct tfctx *ctx, char *name);
   // inserisco anche un terzo campo della struct utile per gestire delle funzioni
   // definite dall'utente. Se il campo è null, le funzioni saranno quelle di default del linguaggio.
   tfobj *user_func;
@@ -401,26 +401,36 @@ tfobj *compile(char *prg) {
 
 /*========================= Basic standard library ===========================*/
 // funzione per gestire le operazioni matematiche basilari
-void basicMathFunctions(tfctx *ctx, char *name) {
-// prima di andare a prendere i valori su cui eseguire le operazioni
-// verifico che ci siano sufficienti elementi nello stack
-if (checkStackMinLen(ctx, 2)) return;
-// arrivato qui la condizione è verificata per cui prelevo l'ULTIMO ELEMENTO (b)
-// accertandomi che sia un oggetto tfobj di tipo INT
-tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
-// avendo prelevato b, proseguo prelevando a
-tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
-// se uno dei due elementi è null, ritorna 1
-if (a == NULL || b == NULL) return;
-// se altrimenti gli elementi sono validi, li sommo come due int normali,
-// li converto in tfobj e ne carico la somma ottenuta nello stack
-int result = a->i + b->i;
-ctxStackPush(ctx, createIntObject(result);
-// dopo la lezione 27, Salvatore ha spiegato le funzioni variadiche,
-// quando riprenderemo con ToyForth questa funzione dovrà essere completata.
-// TODO: SCRIVERE LE FUNZIONI checkStackMinLen, checkStackPop...
-// TODO: UTILIZZARE UNO SWITCH per implementare le varie operazioni matematiche
-
+int basicMathFunctions(tfctx *ctx, char *name) {
+  // prima di andare a prendere i valori su cui eseguire le operazioni
+  // verifico che ci siano sufficienti elementi nello stack
+  if (checkStackMinLen(ctx, 2)) return TF_ERR;
+  // arrivato qui la condizione è verificata per cui prelevo l'ULTIMO ELEMENTO (b)
+  // accertandomi che sia un oggetto tfobj di tipo INT
+  tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+  // avendo prelevato b, proseguo prelevando a
+  tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+  // se uno dei due elementi è null, ritorna 1
+  if (a == NULL || b == NULL) return TF_ERR;
+  // se altrimenti gli elementi sono validi, li sommo come due int normali,
+  // li converto in tfobj e ne carico la somma ottenuta nello stack
+  int result;
+  // dopo la lezione 27, Salvatore ha spiegato le funzioni variadiche,
+  // quando riprenderemo con ToyForth questa funzione dovrà essere completata.
+  // TODO: SCRIVERE LE FUNZIONI checkStackMinLen, checkStackPop...
+  switch(name[0]) {
+    case '+':
+      result = a->i + b->i;
+      break;
+    case '-':
+      result = a->i - b->i;
+      break;
+    case '*':
+      result = a->i * b->i;
+      break;
+  }
+  ctxStackPush(ctx, createIntObject(result);
+  return TF_OK;
 }
 /*========================= Execution and context ============================*/
 
@@ -464,7 +474,7 @@ tffuncentry *registerFunction(tfctx *ctx, tfobj *name) {
 }
 
 // funzione per registrare le funzioni che hanno un corrispettivo in C
-void registerCFunction(tfctx *ctx, char *name, void (*callback) (tfctx *ctx, tfobj *name)) {
+void registerCFunction(tfctx *ctx, char *name, int (*callback) (tfctx *ctx, tfobj *name)) {
   // inizializzo la function entry
   tffuncentry *fe;
   // converto il nome della funzione in oggetto di tipo stringa (tfobj)
@@ -512,17 +522,16 @@ int callSymbol(tfctx *ctx, tfobj *word) {
   tffuncentry *fe = getFunctionByName(ctx, word);
   if (fe == NULL) return TF_ERR;
   if (fe->user_func) {
-    //TODO
+    return TF_ERR;
   } else {
-    fe->callback(ctx, fe->name->str.ptr);
+    return fe->callback(ctx, fe->name->str.ptr);
   }
-  return TF_OK;
 }
 
 // la funzione accetta come argomenti:
 // - un programma, ovviamente (prg, che non è altro che una lista salvata nello stack;
 // - un contesto di esecuzione (tfctx).
-void exec(tfctx *ctx, tfobj *prg) {
+int exec(tfctx *ctx, tfobj *prg) {
   // utilizzo la funzione assert per essere sicuro che il programma sia di tipo LIST.
   assert(prg->type == TFOBJ_TYPE_LIST); 
   // funzione per ciclare all'interno della lista tfobj e recuperare le word.
@@ -531,6 +540,10 @@ void exec(tfctx *ctx, tfobj *prg) {
     tfobj *word = prg->list.ele[j];
     switch (word->type) {
       case TFOBJ_TYPE_SYMBOL:
+        if (callSymbol(ctx, word) == TF_ERR) {
+          printf("Runtime error. \n");
+          return TF_ERR;
+        }
         // nel caso in cui ci sia un simbolo devo avere una funzione in grado di chiamarlo
         // da chiamare solo quando sarà completa --> callSymbol(ctx, word);
         break;
@@ -539,6 +552,7 @@ void exec(tfctx *ctx, tfobj *prg) {
         retain(word);
     }
   }
+  return TF_OK;
 }
 
 /*======================================= Main ============================================*/
