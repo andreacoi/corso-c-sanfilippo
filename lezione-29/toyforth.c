@@ -76,7 +76,7 @@ typedef struct FunctionTableEntry {
   // il nome della funzione
   tfobj *name;
   // l'esecuzione della funzione stessa
-  void (*callback)(struct tfctx *ctx, tfobj *name);
+  void (*callback)(struct tfctx *ctx, char *name);
   // inserisco anche un terzo campo della struct utile per gestire delle funzioni
   // definite dall'utente. Se il campo è null, le funzioni saranno quelle di default del linguaggio.
   tfobj *user_func;
@@ -401,7 +401,7 @@ tfobj *compile(char *prg) {
 
 /*========================= Basic standard library ===========================*/
 // funzione per gestire le operazioni matematiche basilari
-void basicMathFunctions(tfctx *ctx, tfobj *name) {
+void basicMathFunctions(tfctx *ctx, char *name) {
 // prima di andare a prendere i valori su cui eseguire le operazioni
 // verifico che ci siano sufficienti elementi nello stack
 if (checkStackMinLen(ctx, 2)) return;
@@ -420,6 +420,7 @@ ctxStackPush(ctx, createIntObject(result);
 // quando riprenderemo con ToyForth questa funzione dovrà essere completata.
 // TODO: SCRIVERE LE FUNZIONI checkStackMinLen, checkStackPop...
 // TODO: UTILIZZARE UNO SWITCH per implementare le varie operazioni matematiche
+
 }
 /*========================= Execution and context ============================*/
 
@@ -507,11 +508,17 @@ tfctx *createContext(void) {
 // ritorna true (0) se il sistema trova il simbolo abbinato ad una qualche funzione.
 // altrimenti ritorna 1.
 // 
-/* TODO: completare funzione callSymbol 
 int callSymbol(tfctx *ctx, tfobj *word) {
-  return 0;
+  tffuncentry *fe = getFunctionByName(ctx, word);
+  if (fe == NULL) return TF_ERR;
+  if (fe->user_func) {
+    //TODO
+  } else {
+    fe->callback(ctx, fe->name->str.ptr);
+  }
+  return TF_OK;
 }
-*/
+
 // la funzione accetta come argomenti:
 // - un programma, ovviamente (prg, che non è altro che una lista salvata nello stack;
 // - un contesto di esecuzione (tfctx).
