@@ -5,6 +5,9 @@
 #include <ctype.h>
 #include <assert.h>
 /*================================= Data structures =======================================*/
+// dichiara delle costanti intere per gestire gli errori
+#define TF_OK 0
+#define TF_ERR 1
 // per scrivere un inteprete bisogna innanzitutto individuare i tipi primitivi:
 // int
 // str
