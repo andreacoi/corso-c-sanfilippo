@@ -504,6 +504,7 @@ void registerCFunction(tfctx *ctx, char *name, int (*callback) (tfctx *ctx, char
   } else {
     // invoco la funzione registerFunction che setta a NULL la callback e la user_func
     fe = registerFunction(ctx, oname);
+    fe->callback = callback;
   }
   release(oname);
 }
