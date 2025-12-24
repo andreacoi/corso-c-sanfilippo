@@ -17,6 +17,7 @@
 #define TFOBJ_TYPE_STR 1
 #define TFOBJ_TYPE_BOOL 2
 #define TFOBJ_TYPE_LIST 3
+#define TFOBJ_TYPE_ALL 255
 #define TFOBJ_TYPE_SYMBOL 4 // <-- tipo "a parte" perché riguarda i "simboli", che sono tutte quelle parole che non vanno nello stack ma sono FUNZIONI da eseguire.
 // dichiariamo una struct per gestire i tipi e gli operatori (symbols)
 /* facendo un parallelismo con i linguaggi OOP questo è la rappresentazione in C di un OGGETTO <-- CONCETTO CHIAVE */
@@ -102,6 +103,9 @@ typedef struct tfctx {
 void retain(tfobj *o);
 void release(tfobj *o);
 
+// standard library prototypes
+int basicMathFunctions(tfctx *ctx, char *name);
+
 /*=============================== Allocation wrappers  =====================================*/
 
 // per scrivere una "variazione" di malloc, inizio con il copiarmi il prototipo dalla manpage
@@ -162,7 +166,6 @@ tfobj *createBoolObject(int i) {
  * Caso TFOBJ_TYPE_LIST: (attenzione!) fa una chiamata ricorsiva alla funzione print_object
  * passando come elemento ele, e fa ripartire la scelta dei casi, stampando di fatto la lista di numeri com'era prima.
  * Postilla sulla exec: il nome è stato cambiato perché non si trattava di una vera e propria esecuzione.
- * TODO: scrivere la funzione exec.
  *
 */
 void printObject(tfobj *o) {
@@ -299,6 +302,34 @@ void listPush(tfobj *l, tfobj *ele) {
   l->list.len++; // incremento il numero di elementi della lista.
 }
 
+// funzione per estrarre dallo stack l'ultimo elemento con il tipo specificato
+tfobj *listPopType (tfctx *ctx, int type) {
+  // in questa funzione devo utilizzare spesso ctx->stack, per cui creo una variabile di appoggio più corta.
+  tfobj *stack = ctx->stack;
+  // prima verifico entrambe le condizioni per le quali la funzione ritorna NULL
+  // STACK VUOTO
+  if (stack->list.len == 0) return NULL;
+  // Stack pieno, ma ultimo oggetto in cima allo stack non coincidente con il tipo specificato
+  // prima di fare una verifica su stack->list.ele[stack->list.len - 1] gli associo una variabile
+  tfobj *to_pop = stack->list.ele[stack->list.len - 1];
+  // se type è diverso da 255 e to_pop->type è diverso da type, ritorna NULL
+  if (type != TFOBJ_TYPE_ALL && to_pop->type != type) return NULL;
+
+  stack->list.len--; // decremento il numero di elementi della lista.
+  if (stack->list.len == 0) {
+    free(stack->list.ele);
+    stack->list.ele = NULL;
+  }
+  // alloca utilizzando realloc "IN MANIERA NEGATIVA"! Gli elementi stanno "sparendo" dallo stack.
+  stack->list.ele = xrealloc(stack->list.ele, sizeof(tfobj*) * (stack->list.len + 1)); 
+
+  return to_pop;
+}
+
+tfobj *listPop(tfctx *ctx) {
+  return listPopType(ctx, TFOBJ_TYPE_ALL);
+}
+
 /*============================= Convert program in TFOBJ ==================================*/
 // funzione per "consumare gli spazi"
 void parseSpaces(tfparser *parser) {
@@ -399,39 +430,6 @@ tfobj *compile(char *prg) {
   return parsed;
 }
 
-/*========================= Basic standard library ===========================*/
-// funzione per gestire le operazioni matematiche basilari
-int basicMathFunctions(tfctx *ctx, char *name) {
-  // prima di andare a prendere i valori su cui eseguire le operazioni
-  // verifico che ci siano sufficienti elementi nello stack
-  if (checkStackMinLen(ctx, 2)) return TF_ERR;
-  // arrivato qui la condizione è verificata per cui prelevo l'ULTIMO ELEMENTO (b)
-  // accertandomi che sia un oggetto tfobj di tipo INT
-  tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
-  // avendo prelevato b, proseguo prelevando a
-  tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
-  // se uno dei due elementi è null, ritorna 1
-  if (a == NULL || b == NULL) return TF_ERR;
-  // se altrimenti gli elementi sono validi, li sommo come due int normali,
-  // li converto in tfobj e ne carico la somma ottenuta nello stack
-  int result;
-  // dopo la lezione 27, Salvatore ha spiegato le funzioni variadiche,
-  // quando riprenderemo con ToyForth questa funzione dovrà essere completata.
-  // TODO: SCRIVERE LE FUNZIONI checkStackMinLen, checkStackPop...
-  switch(name[0]) {
-    case '+':
-      result = a->i + b->i;
-      break;
-    case '-':
-      result = a->i - b->i;
-      break;
-    case '*':
-      result = a->i * b->i;
-      break;
-  }
-  ctxStackPush(ctx, createIntObject(result);
-  return TF_OK;
-}
 /*========================= Execution and context ============================*/
 
 /*
@@ -441,6 +439,21 @@ int basicMathFunctions(tfctx *ctx, char *name) {
  * che permettono al programma di interagire con il mondo esterno.
  */
 
+int ctxCheckStackMinLen(tfctx *ctx, size_t min) {
+  return (ctx->stack->list.len < min) ? TF_ERR : TF_OK;
+}
+
+// rimuove l'ultimo elemento nello stack di un tipo "type", stack LIFO. La
+// funzione ritorna NULL se lo stack è vuoto oppure se l'oggetto in testa
+// non coincide (come tipo), con il tipo indicato.
+tfobj *ctxStackPop(tfctx *ctx, int type) {
+  return listPopType(ctx, type);
+};
+
+// carica l'oggetto nello stack principale dell'interprete.
+void ctxStackPush(tfctx *ctx, tfobj *obj) {
+  listPush(ctx->stack, obj);
+};
 // funzione per trovare la funzione passata nell'argomento name all'interno del
 // contesto ctx. name è un oggetto di tipo tfobj.
 // se la funzione non viene trovata ritorna NULL.
@@ -474,7 +487,7 @@ tffuncentry *registerFunction(tfctx *ctx, tfobj *name) {
 }
 
 // funzione per registrare le funzioni che hanno un corrispettivo in C
-void registerCFunction(tfctx *ctx, char *name, int (*callback) (tfctx *ctx, tfobj *name)) {
+void registerCFunction(tfctx *ctx, char *name, int (*callback) (tfctx *ctx, char *name)) {
   // inizializzo la function entry
   tffuncentry *fe;
   // converto il nome della funzione in oggetto di tipo stringa (tfobj)
@@ -510,7 +523,7 @@ tfctx *createContext(void) {
   // inizializza il numero di funzioni a 0.
   ctx->functable.func_table = NULL;
   ctx->functable.func_count = 0;
-  // registerFunction(ctx,"+", basicMathFunctions);
+  registerCFunction(ctx,"+", basicMathFunctions);
   return ctx;
 }
 
@@ -541,19 +554,53 @@ int exec(tfctx *ctx, tfobj *prg) {
     switch (word->type) {
       case TFOBJ_TYPE_SYMBOL:
         if (callSymbol(ctx, word) == TF_ERR) {
-          printf("Runtime error. \n");
+          printf("Runtime error.\n");
           return TF_ERR;
         }
         // nel caso in cui ci sia un simbolo devo avere una funzione in grado di chiamarlo
         // da chiamare solo quando sarà completa --> callSymbol(ctx, word);
         break;
       default:
-        listPush(ctx->stack, word);
+        ctxStackPush(ctx, word);
         retain(word);
     }
   }
   return TF_OK;
-  // TODO: RIPRENDI DAL MINUTO 18:18.
+}
+
+/*========================= Basic standard library ===========================*/
+// funzione per gestire le operazioni matematiche basilari
+int basicMathFunctions(tfctx *ctx, char *name) {
+  // prima di andare a prendere i valori su cui eseguire le operazioni
+  // verifico che ci siano sufficienti elementi nello stack
+  if (ctxCheckStackMinLen(ctx, 2)) return TF_ERR;
+  // arrivato qui la condizione è verificata per cui prelevo l'ULTIMO ELEMENTO (b)
+  // accertandomi che sia un oggetto tfobj di tipo INT
+  tfobj *b = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+  // avendo prelevato b, proseguo prelevando a
+  tfobj *a = ctxStackPop(ctx, TFOBJ_TYPE_INT);
+  // se uno dei due elementi è null, ritorna 1
+  if (a == NULL || b == NULL) return TF_ERR;
+  // se altrimenti gli elementi sono validi, li sommo come due int normali,
+  // li converto in tfobj e ne carico la somma ottenuta nello stack
+  int result;
+  // dopo la lezione 27, Salvatore ha spiegato le funzioni variadiche,
+  // quando riprenderemo con ToyForth questa funzione dovrà essere completata.
+  switch(name[0]) {
+    case '+':
+      result = a->i + b->i;
+      break;
+    case '-':
+      result = a->i - b->i;
+      break;
+    case '*':
+      result = a->i * b->i;
+      break;
+  }
+  release(a);
+  release(b);
+  ctxStackPush(ctx, createIntObject(result));
+  return TF_OK;
 }
 
 /*======================================= Main ============================================*/
